@@ -3,21 +3,46 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"log"
 	"strings"
 	"terminal-ui/internal/ollama"
 
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 )
 
+var (
+	spinnerOff = 0
+	spinnerOn  = 1
+)
+
+var (
+	ScrollOff = 0
+	scrollOn  = 1
+)
+var (
+	resizeNo  = 0
+	resizeYes = 1
+)
+
 type TerminalModel struct {
-	TextInput textinput.Model
-	Message   string
-	Chunk     string
-	History   []ollama.ChatMessage
-	s         chan sender
+	Viewport     viewport.Model
+	InputView    textarea.Model
+	TextInput    textinput.Model
+	Spinner      spinner.Model
+	Message      string
+	FinalMessage string
+	Chunk        string
+	History      []ollama.ChatMessage
+	SpStatus     int
+	scrollStatus int
+	viewResize   int
+	s            chan sender
 }
 
 type reciever struct {
@@ -39,7 +64,9 @@ func initialModel() TerminalModel {
 	ti := textinput.New()
 	ti.Focus()
 	s := make(chan sender)
-	return TerminalModel{TextInput: ti, s: s}
+	sp := spinner.New(spinner.WithSpinner(spinner.Line))
+	// vp := viewport.New(width int, height int)
+	return TerminalModel{TextInput: ti, Spinner: sp, s: s}
 }
 
 func (m TerminalModel) Init() tea.Cmd {
@@ -48,49 +75,93 @@ func (m TerminalModel) Init() tea.Cmd {
 
 func (m TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-
+	var cmds []tea.Cmd
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		if m.viewResize == resizeNo {
+			m.Viewport = viewport.New(msg.Width, msg.Height-viewportStyle.GetBorderBottomSize()*2)
+			m.Viewport.Style = viewportStyle
+			m.Viewport.Style.Width(msg.Width - 10)
+			m.viewResize = resizeYes
+		} else {
+			m.Viewport.Height = msg.Height - viewportStyle.GetBorderTopSize() - viewportStyle.GetBorderBottomSize()
+			m.Viewport.Style = viewportStyle
+			m.Viewport.Style.Width(msg.Width - 10)
+		}
+		m.Viewport.GotoBottom()
 	case reciever:
 		m.Chunk = msg.val
 		m.Message += m.Chunk
+		m.Viewport.SetContent(m.FinalMessage + "\n" + "Assistant: " + strings.TrimSpace(m.Message))
 		return m, listenActivity(m.s)
 	case ollama.CompletionResponse:
-		// m.Message = ""
 		m.History = append(m.History, ollama.ChatMessage{Role: msg.Message.Role, Content: msg.Message.Content})
-		return m, cmd
+		m.Spinner = spinner.New(spinner.WithSpinner(spinner.MiniDot))
+		renderer, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(m.Viewport.Style.GetWidth()-10))
+		if err != nil {
+			log.Fatal(err)
+		}
+		content, err := renderer.Render(msg.Message.Content)
+		m.FinalMessage += "\n" + assistantstyle.Render("Assistant:", strings.TrimSpace(content))
+		m.Viewport.SetContent(m.FinalMessage)
+		m.SpStatus = spinnerOff
+		m.Viewport.GotoBottom()
+		return m, tea.Batch(cmd, m.TextInput.Focus(), textinput.Blink)
+
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "q":
+		case tea.KeyCtrlC.String(), "q":
 			return m, tea.Quit
-		case "enter":
+		case tea.KeyEnter.String():
 			m.Message = ""
 			cm := ollama.ChatMessage{Role: "user", Content: m.TextInput.Value()}
+			m.FinalMessage += fmt.Sprintf("\n%s", userstyle.Render("User:", strings.TrimSpace(cm.Content)))
+			m.Viewport.SetContent(fmt.Sprintf("\n%s", userstyle.Render("User:", strings.TrimSpace(cm.Content))))
 			m.History = append(m.History, cm)
-			m.TextInput.Reset()
 			cmd = sendMessage(m.History, m.s)
-			return m, tea.Batch(cmd)
+			m.TextInput.Blur()
+			m.TextInput.Reset()
+			m.SpStatus = 1
+			return m, tea.Batch(cmd, m.Spinner.Tick)
+		case tea.KeyEsc.String():
+			if m.TextInput.Focused() {
+
+				m.TextInput.Blur()
+			} else {
+				cmd = m.TextInput.Focus()
+			}
+			return m, cmd
+		case tea.KeyUp.String(), "k":
+			m.Viewport.LineUp(1)
+			m.Viewport, cmd = m.Viewport.Update(msg)
+			return m, cmd
+		case tea.KeyDown.String(), "j":
+			m.Viewport.LineDown(1)
+			m.Viewport, cmd = m.Viewport.Update(msg)
+			return m, cmd
 		}
-		// default:
 		m.TextInput, cmd = m.TextInput.Update(msg)
 		return m, tea.Batch(cmd)
+	case spinner.TickMsg:
+		m.Spinner, cmd = m.Spinner.Update(msg)
+		return m, cmd
 	}
 	m.TextInput, cmd = m.TextInput.Update(msg)
-	return m, cmd
+	cmds = append(cmds, cmd)
+	m.Viewport, cmd = m.Viewport.Update(msg)
+	cmds = append(cmds, cmd)
+	return m, tea.Batch(cmds...)
 }
 
 func (m TerminalModel) View() string {
-	const glamourGutter = 2
-	m.TextInput.Focus()
-	m.TextInput.Cursor.BlinkCmd()
-	renderer, err := glamour.NewTermRenderer(glamour.WithAutoStyle())
-	if err != nil {
-		log.Println(err)
+	if m.Message == "" {
+		return fmt.Sprintf("%s\n%s", m.Viewport.View(), m.TextInput.View())
 	}
-	view, err := renderer.Render(m.Message)
-	if err != nil {
-		view = m.Message
+
+	if m.SpStatus == 0 {
+		return fmt.Sprintf("%s\n%s", m.Viewport.View(), m.TextInput.View())
 	}
-	return view + "\n" + m.TextInput.View()
+	return fmt.Sprintf("%s\n%s", m.Viewport.View(), m.Spinner.View())
 }
 
 var client = ollama.NewClient("llama3.2", "")

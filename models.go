@@ -62,15 +62,16 @@ func listenActivity(r chan sender) tea.Cmd {
 
 func initialModel() TerminalModel {
 	ti := textinput.New()
+	ti.Placeholder = "Enter your input here.."
+
 	ti.Focus()
 	s := make(chan sender)
-	sp := spinner.New(spinner.WithSpinner(spinner.Line))
-	// vp := viewport.New(width int, height int)
+	sp := spinner.New(spinner.WithSpinner(spinner.Line), spinner.WithStyle(spinnerstyle))
 	return TerminalModel{TextInput: ti, Spinner: sp, s: s}
 }
 
 func (m TerminalModel) Init() tea.Cmd {
-	return tea.Batch(textinput.Blink, listenActivity(m.s))
+	return tea.Batch(textinput.Blink, listenActivity(m.s), tea.EnterAltScreen)
 }
 
 func (m TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -78,21 +79,26 @@ func (m TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		if m.viewResize == resizeNo {
-			m.Viewport = viewport.New(msg.Width, msg.Height-viewportStyle.GetBorderBottomSize()*2)
-			m.Viewport.Style = viewportStyle
-			m.Viewport.Style.Width(msg.Width - 10)
-			m.viewResize = resizeYes
-		} else {
+		if m.viewResize == resizeYes {
 			m.Viewport.Height = msg.Height - viewportStyle.GetBorderTopSize() - viewportStyle.GetBorderBottomSize()
-			m.Viewport.Style = viewportStyle
-			m.Viewport.Style.Width(msg.Width - 10)
+			m.Viewport.Width = msg.Width
 		}
+		if m.viewResize == resizeNo {
+
+			m.Viewport = viewport.New(msg.Width, msg.Height-viewportStyle.GetBorderBottomSize()-viewportStyle.GetBorderTopSize())
+			m.viewResize = resizeYes
+		}
+
+		m.Viewport.MouseWheelEnabled = true
+		// m.Viewport.HighPerformanceRendering = true
+		m.Viewport.Style = viewportStyle
+		m.Viewport.Style.Width(msg.Width - 10)
 		m.Viewport.GotoBottom()
 	case reciever:
 		m.Chunk = msg.val
 		m.Message += m.Chunk
 		m.Viewport.SetContent(m.FinalMessage + "\n" + "Assistant: " + strings.TrimSpace(m.Message))
+		m.Viewport.GotoBottom()
 		return m, listenActivity(m.s)
 	case ollama.CompletionResponse:
 		m.History = append(m.History, ollama.ChatMessage{Role: msg.Message.Role, Content: msg.Message.Content})
@@ -111,7 +117,10 @@ func (m TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case tea.KeyCtrlC.String(), "q":
-			return m, tea.Quit
+			if !m.TextInput.Focused() {
+
+				return m, tea.Quit
+			}
 		case tea.KeyEnter.String():
 			m.Message = ""
 			cm := ollama.ChatMessage{Role: "user", Content: m.TextInput.Value()}
@@ -131,12 +140,14 @@ func (m TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmd = m.TextInput.Focus()
 			}
 			return m, cmd
-		case tea.KeyUp.String(), "k":
-			m.Viewport.LineUp(1)
+		}
+		if msg.String() == tea.KeyUp.String() || msg.String() == "k" && !m.TextInput.Focused() {
+			m.Viewport.ViewUp()
 			m.Viewport, cmd = m.Viewport.Update(msg)
 			return m, cmd
-		case tea.KeyDown.String(), "j":
-			m.Viewport.LineDown(1)
+		}
+		if msg.String() == tea.KeyDown.String() || msg.String() == "j" && !m.TextInput.Focused() {
+			m.Viewport.ViewDown()
 			m.Viewport, cmd = m.Viewport.Update(msg)
 			return m, cmd
 		}

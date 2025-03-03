@@ -31,7 +31,7 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.TextInput.Focused() {
 				m.Message = ""
 				cm := ollama.ChatMessage{Role: "user", Content: m.TextInput.Value()}
-				m.FinalMessage += fmt.Sprintf("\n%s%s\n", userstyle.Render("User: "), strings.TrimSpace(cm.Content))
+				m.FinalMessage += fmt.Sprintf("%s%s\n", userstyle.Render("User: "), strings.TrimSpace(cm.Content))
 				m.Viewport.SetContent(m.FinalMessage)
 				m.Viewport.GotoBottom()
 				m.History = append(m.History, cm)
@@ -64,7 +64,6 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Chunk = msg.val
 		m.Message += m.Chunk
 		content := fmt.Sprintf("%s\n%s%s", m.FinalMessage, assistantstyle.Render("Assistant: "), m.Message)
-		// m.Viewport.SetContent(m.FinalMessage + "\n" + "Assistant:\t" + strings.TrimSpace(m.Message))
 		m.Viewport.SetContent(content)
 		m.Viewport.GotoBottom()
 		return m, tea.Batch(cmd, listenActivity(m.s))
@@ -76,11 +75,13 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			log.Fatal(err)
 		}
 		content, err := renderer.Render(msg.Message.Content)
-		m.FinalMessage += fmt.Sprintf("\n%s%s\n", assistantstyle.Render("Assistant: "), strings.TrimSpace(content))
+		m.Viewport.GotoTop()
+		m.Viewport, vp = m.Viewport.Update(msg)
+		m.FinalMessage += fmt.Sprintf("\n%s%s\n\n\n", assistantstyle.Render("Assistant: "), strings.TrimSpace(content))
 		m.Viewport.SetContent(m.FinalMessage)
 		m.Viewport.GotoBottom()
 		m.SpStatus = spinnerOff
-		return m, tea.Batch(cmd, m.TextInput.Focus(), textinput.Blink)
+		return m, tea.Batch(cmd, m.TextInput.Focus(), textinput.Blink, vp)
 
 	case tea.WindowSizeMsg:
 		m.Viewport.Height = msg.Height - viewportStyle.GetBorderTopSize() - viewportStyle.GetBorderBottomSize() - m.TextInput.TextStyle.GetHeight()

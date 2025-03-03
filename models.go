@@ -58,6 +58,7 @@ func listenActivity(r chan sender) tea.Cmd {
 
 func initialModel() *TerminalModel {
 	ti := textinput.New()
+	ti.TextStyle.Height(5)
 	ti.Placeholder = "Enter your input here.."
 	vp := viewport.New(0, 0)
 	vp.MouseWheelEnabled = true

@@ -81,7 +81,7 @@ func (o *Ollama) SendMessageStream(history []ChatMessage) (CompletionResponse, e
 			return completionResponse, nil
 		}
 		message.WriteString(temp.Message.Content)
-		fmt.Printf(temp.Message.Content)
+		fmt.Printf("%s", temp.Message.Content)
 		if temp.Done {
 			completionResponse = temp
 			completionResponse.Message.Content = message.String()

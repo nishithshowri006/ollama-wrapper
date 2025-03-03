@@ -53,8 +53,8 @@ type ModelsList struct {
 			Families          any    `json:"families,omitempty"`
 			ParameterSize     string `json:"parameter_size,omitempty"`
 			QuantizationLevel string `json:"quantization_level,omitempty"`
-		} `json:"details,omitempty"`
-	} `json:"models,omitempty"`
+		} `json:"details"`
+	} `json:"models"`
 }
 type PullRequest struct {
 	ModelName string `json:"model"`

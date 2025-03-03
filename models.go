@@ -65,7 +65,7 @@ func initialModel() *TerminalModel {
 	ti.Focus()
 	s := make(chan sender)
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(spinnerstyle))
-	return &TerminalModel{TextInput: ti, Spinner: sp, s: s, Viewport: vp, Cursor: cur}
+	return &TerminalModel{TextInput: ti, Spinner: sp, s: s, Viewport: vp}
 }
 
 func (m *TerminalModel) Init() tea.Cmd {

@@ -7,10 +7,10 @@ import (
 
 	// "log"
 	"os"
-	"terminal-ui/internal/ollama"
 
 	tea "github.com/charmbracelet/bubbletea"
-	// tea "github.com/charmbracelet/bubbletea"
+	"github.com/nishithshowri006/ollama-wrapper/internal/ollama"
+	"github.com/nishithshowri006/ollama-wrapper/listui"
 )
 
 func run_cli() {
@@ -38,7 +38,8 @@ func run_cli() {
 var BASE_URL = "http://localhost:11434/api"
 
 func smn() {
-	p := tea.NewProgram(initialModel())
+
+	p := tea.NewProgram(listui.InitilizeModel())
 
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)

@@ -31,7 +31,7 @@ type CompletionRequest struct {
 type CompletionResponse struct {
 	Model              string      `json:"model"`
 	CreatedAt          time.Time   `json:"created_at"`
-	Message            ChatMessage `json:"message,omitempty"`
+	Message            ChatMessage `json:"message"`
 	Done               bool        `json:"done,omitempty"`
 	TotalDuration      int64       `json:"total_duration,omitempty"`
 	LoadDuration       int         `json:"load_duration,omitempty"`
@@ -40,21 +40,21 @@ type CompletionResponse struct {
 	EvalCount          int         `json:"eval_count,omitempty"`
 	EvalDuration       int64       `json:"eval_duration,omitempty"`
 }
-
+type ModelsMetadata struct {
+	Name       string `json:"name,omitempty"`
+	ModifiedAt string `json:"modified_at,omitempty"`
+	Size       int64  `json:"size,omitempty"`
+	Digest     string `json:"digest,omitempty"`
+	Details    struct {
+		Format            string `json:"format,omitempty"`
+		Family            string `json:"family,omitempty"`
+		Families          any    `json:"families,omitempty"`
+		ParameterSize     string `json:"parameter_size,omitempty"`
+		QuantizationLevel string `json:"quantization_level,omitempty"`
+	} `json:"details"`
+}
 type ModelsList struct {
-	Models []struct {
-		Name       string `json:"name,omitempty"`
-		ModifiedAt string `json:"modified_at,omitempty"`
-		Size       int64  `json:"size,omitempty"`
-		Digest     string `json:"digest,omitempty"`
-		Details    struct {
-			Format            string `json:"format,omitempty"`
-			Family            string `json:"family,omitempty"`
-			Families          any    `json:"families,omitempty"`
-			ParameterSize     string `json:"parameter_size,omitempty"`
-			QuantizationLevel string `json:"quantization_level,omitempty"`
-		} `json:"details"`
-	} `json:"models"`
+	Models []ModelsMetadata `json:"models"`
 }
 type PullRequest struct {
 	ModelName string `json:"model"`
@@ -76,28 +76,39 @@ func NewClient(modelName string, baseUrl string) *Ollama {
 	}
 	o := Ollama{ModelName: modelName, BaseUrl: baseUrl}
 	// if o.ModelExists
+	if o.ModelName == "" {
+		return &o
+	}
 	err := o.Pull(modelName)
 	if err != nil {
 		log.Fatal(err)
 	}
 	return &o
 }
+func (o *Ollama) ListModels() ([]ModelsMetadata, error) {
 
-func (o *Ollama) ModelExists() bool {
-	//make get request
 	res, err := http.Get(o.BaseUrl + "/tags")
 	if err != nil {
 		log.Fatal(err)
-		return false
+		return nil, err
 	}
 	var modelsList ModelsList
 	body, err := io.ReadAll(res.Body)
 	err = json.Unmarshal(body, &modelsList)
 	if err != nil {
 		log.Fatal(err)
+		return nil, err
+	}
+	return modelsList.Models, nil
+}
+
+func (o *Ollama) ModelExists() bool {
+	//make get request
+	modelsList, err := o.ListModels()
+	if err != nil {
 		return false
 	}
-	for _, model := range modelsList.Models {
+	for _, model := range modelsList {
 		if strings.Contains(model.Name, o.ModelName) {
 			return true
 		}
@@ -147,6 +158,10 @@ func (o *Ollama) Pull(modelName string) error {
 }
 
 func (o *Ollama) SendMessage(history []ChatMessage) (CompletionResponse, error) {
+	var cr CompletionResponse
+	if o.ModelName == "" {
+		return cr, fmt.Errorf("Didn't Provide Model. Please try pulling the model or set model")
+	}
 	completionRequest := CompletionRequest{
 		Model:    o.ModelName,
 		Messages: history,
@@ -154,41 +169,40 @@ func (o *Ollama) SendMessage(history []ChatMessage) (CompletionResponse, error) 
 	}
 	body, err := json.Marshal(completionRequest)
 	//write file
-	var completionResponse CompletionResponse
 	if err != nil {
-		return completionResponse, err
+		return cr, err
 	}
 
 	fp, err := os.OpenFile("log.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return completionResponse, err
+		return cr, err
 	}
 	_, err = fp.Write(body)
 
 	if err != nil {
-		return completionResponse, err
+		return cr, err
 	}
 	req, err := http.NewRequest("POST", o.BaseUrl+"/chat", bytes.NewReader(body))
 	if err != nil {
-		return completionResponse, err
+		return cr, err
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return completionResponse, err
+		return cr, err
 	}
 	defer res.Body.Close()
 	body, err = io.ReadAll(res.Body)
 	if err != nil {
-		return completionResponse, err
+		return cr, err
 	}
 	_, err = fp.Write(body)
 
 	if err != nil {
-		return completionResponse, err
+		return cr, err
 	}
-	err = json.Unmarshal(body, &completionResponse)
+	err = json.Unmarshal(body, &cr)
 	if err != nil {
-		return completionResponse, err
+		return cr, err
 	}
-	return completionResponse, nil
+	return cr, nil
 }

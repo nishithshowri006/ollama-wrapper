@@ -1,15 +1,15 @@
-package main
+package chat
 
 import (
 	"fmt"
 	"log"
 	"strings"
-	"terminal-ui/internal/ollama"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"github.com/nishithshowri006/ollama-wrapper/internal/ollama"
 )
 
 func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -23,34 +23,37 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case tea.KeyCtrlC.String(), "q":
-			if !m.TextInput.Focused() {
+			if !m.InputView.Focused() || m.SpStatus == 1 {
 
 				return m, tea.Quit
 			}
+
 		case tea.KeyEnter.String():
-			if m.TextInput.Focused() {
+			if m.InputView.Focused() {
 				m.Message = ""
-				cm := ollama.ChatMessage{Role: "user", Content: m.TextInput.Value()}
-				m.FinalMessage += fmt.Sprintf("%s%s\n", userstyle.Render("User: "), strings.TrimSpace(cm.Content))
+				cm := ollama.ChatMessage{Role: "user", Content: m.InputView.Value()}
+				m.Viewport.GotoTop()
+				m.FinalMessage += fmt.Sprintf("\n%s%s\n", userstyle.Render("User: "), strings.TrimSpace(cm.Content))
 				m.Viewport.SetContent(m.FinalMessage)
 				m.Viewport.GotoBottom()
+				// vp = viewport.Sync(m.Viewport)
 				m.History = append(m.History, cm)
-				cmd = sendMessage(m.History, m.s)
-				m.TextInput.Blur()
-				m.TextInput.Reset()
+				cmd = m.sendMessage()
+				m.InputView.Blur()
+				m.InputView.Reset()
 				m.SpStatus = spinnerOn
 				return m, tea.Batch(cmd, m.Spinner.Tick)
 			}
 		case tea.KeyEsc.String():
-			if m.TextInput.Focused() {
-				m.TextInput.Blur()
+			if m.InputView.Focused() {
+				m.InputView.Blur()
 			} else {
-				cmd = m.TextInput.Focus()
+				cmd = m.InputView.Focus()
 			}
 			m.Viewport.GotoBottom()
 		default:
-			if m.TextInput.Focused() {
-				m.TextInput, ta = m.TextInput.Update(msg)
+			if m.InputView.Focused() {
+				m.InputView, ta = m.InputView.Update(msg)
 				return m, ta
 			}
 			m.Viewport, vp = m.Viewport.Update(msg)
@@ -60,13 +63,13 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Spinner, cmd = m.Spinner.Update(msg)
 		return m, cmd
 
-	case reciever:
-		m.Chunk = msg.val
-		m.Message += m.Chunk
+	case sender:
 		content := fmt.Sprintf("%s\n%s%s", m.FinalMessage, assistantstyle.Render("Assistant: "), m.Message)
+		m.Viewport.GotoTop()
 		m.Viewport.SetContent(content)
 		m.Viewport.GotoBottom()
-		return m, tea.Batch(cmd, listenActivity(m.s))
+		// vp = viewport.Sync(m.Viewport)
+		return m, tea.Batch(cmd, m.listenActivity(), vp)
 
 	case ollama.CompletionResponse:
 		m.History = append(m.History, ollama.ChatMessage{Role: msg.Message.Role, Content: msg.Message.Content})
@@ -76,20 +79,23 @@ func (m *TerminalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		content, err := renderer.Render(msg.Message.Content)
 		m.Viewport.GotoTop()
-		m.Viewport, vp = m.Viewport.Update(msg)
-		m.FinalMessage += fmt.Sprintf("\n%s%s\n\n\n", assistantstyle.Render("Assistant: "), strings.TrimSpace(content))
+		m.FinalMessage += fmt.Sprintf("\n%s%s\n", assistantstyle.Render("Assistant: "), strings.TrimSpace(content))
 		m.Viewport.SetContent(m.FinalMessage)
 		m.Viewport.GotoBottom()
+		// vp = viewport.Sync(m.Viewport)
 		m.SpStatus = spinnerOff
-		return m, tea.Batch(cmd, m.TextInput.Focus(), textinput.Blink, vp)
+		return m, tea.Batch(cmd, m.InputView.Focus(), textinput.Blink, vp)
 
 	case tea.WindowSizeMsg:
-		m.Viewport.Height = msg.Height - viewportStyle.GetBorderTopSize() - viewportStyle.GetBorderBottomSize() - m.TextInput.TextStyle.GetHeight()
-		m.Viewport.Width = msg.Width - viewportStyle.GetBorderLeftSize() - viewportStyle.GetBorderRightSize()
-		m.Viewport.Style = viewportStyle
+		m.InputView.SetHeight(msg.Height / 8)
+		m.InputView.SetWidth(msg.Width)
+		m.Viewport.Height = msg.Height - m.InputView.Height() - viewportStyle.GetBorderBottomSize()
+		m.Viewport.Width = msg.Width - viewportStyle.GetWidth()
 	}
-	m.TextInput, ta = m.TextInput.Update(msg)
+	m.InputView, ta = m.InputView.Update(msg)
+
 	m.Viewport, vp = m.Viewport.Update(msg)
+
 	cmds = append(cmds, cmd, ta, vp)
 	return m, tea.Batch(cmds...)
 }

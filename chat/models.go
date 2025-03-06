@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nishithshowri006/ollama-wrapper/internal/ollama"
 )
@@ -40,6 +41,7 @@ type Model struct {
 	position      int
 	s             chan sender
 	Client        *ollama.Ollama
+	Renderer      *glamour.TermRenderer
 }
 
 var (
@@ -68,12 +70,6 @@ func (i ItemModel) FilterValue() string {
 type sender struct {
 }
 
-func (m *Model) listenActivity() tea.Cmd {
-	return func() tea.Msg {
-		return <-m.s
-	}
-}
-
 func InitializeModel() *Model {
 	var m Model
 	ta := textarea.New()
@@ -84,19 +80,16 @@ func InitializeModel() *Model {
 	ta.Focus()
 	ta.FocusedStyle = textarea.Style{Base: textareaStyle, Placeholder: lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(0))}
 	ta.BlurredStyle = textarea.Style{Base: textareaBlurStyle.Faint(true), Placeholder: lipgloss.NewStyle().Foreground(lipgloss.ANSIColor(0))}
-	client := ollama.NewClient("", "")
-	s := make(chan sender)
+	client := ollama.NewClient(&ollama.Opts{})
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(spinnerstyle))
 	vp := viewport.New(0, 0)
 	vp.Style = viewportStyle
 	m.Spinner = sp
-	m.s = s
 	m.Client = client
 	m.InputView = ta
 	m.ViewportModel = vp
 	m.ListModel = list.New(nil, list.NewDefaultDelegate(), 0, 0)
-
-	//ollama List settings
+	m.s = make(chan sender)
 	m.WhichView = ListView
 	return &m
 }

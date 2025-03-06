@@ -14,8 +14,9 @@ import (
 )
 
 type Ollama struct {
-	ModelName string
-	BaseUrl   string
+	ModelName  string
+	BaseUrl    string
+	ModelsList []ModelsMetadata
 }
 type ChatMessage struct {
 	Role    string `json:"role"`
@@ -66,33 +67,43 @@ type PullResponse struct {
 	Completed int    `json:"completed,omitempty"`
 }
 
-func NewClient(modelName string, baseUrl string) *Ollama {
-	metadata := strings.Split(modelName, ":")
-	if len(metadata) < 1 {
-		modelName += ":latest"
-	}
-	if baseUrl == "" {
-		baseUrl = "http://localhost:11434/api"
-	}
-	o := Ollama{ModelName: modelName, BaseUrl: baseUrl}
-	// if o.ModelExists
-	if o.ModelName == "" {
+type Opts struct {
+	ModelName string
+	BaseUrl   string
+}
+
+func NewClient(Options *Opts) *Ollama {
+	var o Ollama
+	if Options == nil || Options.ModelName == "" {
+		o.BaseUrl = "http://localhost:11434/api"
+		o.SetModelsList()
 		return &o
 	}
-	err := o.Pull(modelName)
+	metadata := strings.Split(Options.ModelName, ":")
+	if len(metadata) < 1 {
+		Options.ModelName += ":latest"
+	}
+	if Options.BaseUrl == "" {
+		Options.BaseUrl = "http://localhost:11434/api"
+	}
+	o = Ollama{ModelName: Options.ModelName, BaseUrl: Options.BaseUrl}
+	// if o.ModelExists
+	if err := o.SetModelsList(); err != nil {
+		log.Fatal(err)
+	}
+	err := o.Pull(o.ModelName)
 	if err != nil {
 		log.Fatal(err)
 	}
 	return &o
 }
-func (o *Ollama) ListModels() ([]ModelsMetadata, error) {
-
+func (o *Ollama) GetModelsList() ([]ModelsMetadata, error) {
+	var modelsList ModelsList
 	res, err := http.Get(o.BaseUrl + "/tags")
 	if err != nil {
 		log.Fatal(err)
 		return nil, err
 	}
-	var modelsList ModelsList
 	body, err := io.ReadAll(res.Body)
 	err = json.Unmarshal(body, &modelsList)
 	if err != nil {
@@ -102,13 +113,18 @@ func (o *Ollama) ListModels() ([]ModelsMetadata, error) {
 	return modelsList.Models, nil
 }
 
+func (o *Ollama) SetModelsList() error {
+	modelsList, err := o.GetModelsList()
+	if err != nil {
+		return err
+	}
+	o.ModelsList = modelsList
+	return nil
+}
+
 func (o *Ollama) ModelExists() bool {
 	//make get request
-	modelsList, err := o.ListModels()
-	if err != nil {
-		return false
-	}
-	for _, model := range modelsList {
+	for _, model := range o.ModelsList {
 		if strings.Contains(model.Name, o.ModelName) {
 			return true
 		}
@@ -153,7 +169,12 @@ func (o *Ollama) Pull(modelName string) error {
 		}
 		fmt.Printf("\r%v, %.2f/%.2f GB", pullInfo.Status, float32(pullInfo.Completed)/(1024*1024*1024), float32(pullInfo.Total)/(1024*1024*1024))
 	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
 	fmt.Printf("\r\n")
+	fmt.Printf("Model Pulled Successfully\n")
+	_ = o.SetModelsList()
 	return nil
 }
 

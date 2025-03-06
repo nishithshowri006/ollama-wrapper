@@ -30,6 +30,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ViewportModel.Height = val.Height - m.InputView.Height() - viewportStyle.GetBorderTopSize()
 		m.ViewportModel.Width = val.Width - viewportStyle.GetWidth()
 		// m.ViewportModel.Style = viewportStyle
+		renderer, err := glamour.NewTermRenderer(glamour.WithStandardStyle("dark"), glamour.WithEmoji(), glamour.WithWordWrap(
+			m.ViewportModel.Width-20,
+		))
+		if err != nil {
+			log.Print(err)
+			renderer = nil
+		}
+		m.Renderer = renderer
+
 		return m, tea.Batch(cmd)
 	}
 	switch m.WhichView {
@@ -132,18 +141,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmd, m.listenActivity(), vp)
 
 		case ollama.CompletionResponse:
+
 			m.History = append(m.History, ollama.ChatMessage{Role: msg.Message.Role, Content: msg.Message.Content})
-			renderer, err := glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(m.ViewportModel.Width-20))
+			content, err := m.Renderer.Render(msg.Message.Content)
 			if err != nil {
-				log.Fatal(err)
+				log.Println(err)
+				content = msg.Message.Content
 			}
-			content, err := renderer.Render(msg.Message.Content)
 			m.ViewportModel.GotoTop()
 			m.FinalMessage.WriteString(assistantcontentstyle.Render("Assistant:", strings.TrimSpace(content)))
 			m.ViewportModel.SetContent(m.FinalMessage.String())
 			m.ViewportModel.GotoBottom()
 			m.SpStatus = spinnerOff
-			return m, tea.Batch(cmd, m.InputView.Focus(), textinput.Blink, vp)
+			return m, tea.Batch(m.InputView.Focus(), textinput.Blink)
 		default:
 			m.InputView, ta = m.InputView.Update(msg)
 

@@ -15,7 +15,7 @@ import (
 
 func run_cli() {
 
-	client := ollama.NewClient("llama3.2", "")
+	client := ollama.NewClient(&ollama.Opts{})
 	messages := make([]ollama.ChatMessage, 0)
 	for {
 		fmt.Printf(">> ")

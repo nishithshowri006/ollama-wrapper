@@ -11,7 +11,13 @@ import (
 	"github.com/nishithshowri006/ollama-wrapper/internal/ollama"
 )
 
+func (m *Model) listenActivity() tea.Cmd {
+	return func() tea.Msg {
+		return <-m.s
+	}
+}
 func (m *Model) sendMessage() tea.Cmd {
+
 	return func() tea.Msg {
 		body, err := m.Client.SendMessageStreamReader(m.History)
 		defer body.Close()
@@ -31,21 +37,19 @@ func (m *Model) sendMessage() tea.Cmd {
 			}
 			message.WriteString(temp.Message.Content)
 			m.Message.WriteString(temp.Message.Content)
-			m.s <- sender{}
 			if temp.Done {
 				response = temp
 				response.Message.Content = message.String()
 				break
 			}
+			m.s <- sender{}
+
 		}
 		return response
 	}
 }
 func (m *Model) setModelList() {
-	mlist, err := m.Client.ListModels()
-	if err != nil {
-		log.Fatal(err)
-	}
+	mlist := m.Client.ModelsList
 	items := make([]list.Item, len(mlist))
 	for i := range len(mlist) {
 		items[i] = ItemModel{mlist[i]}

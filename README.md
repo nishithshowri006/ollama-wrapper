@@ -1,7 +1,7 @@
 # Ollama Wrapper
 
 Ollama Wrapper is a command-line interface (CLI) application that provides a user-friendly terminal UI for interacting with Ollama, a local LLM inference server.
-
+{}
 ## Features
 
 - Interactive terminal UI built with [Bubble Tea](https://github.com/charmbracelet/bubbletea)
